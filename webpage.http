@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>POST Example</title>
+</head>
+<body>
+
+<h2>Send POST Request</h2>
+
+<form action="http://velocity-ev:8067/post_example" method="post">
+    Data: <input type="text" width="50px" name="data_key"><br>
+    <input type="submit" value="Submit">
+</form>
+
+</body>
+</html>
