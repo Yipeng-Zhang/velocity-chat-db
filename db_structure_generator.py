@@ -4,7 +4,7 @@ import re
 test = False # set True for displaying more detials 
 
 
-class db_structure_generator:
+class DbStructureGenerator:
 
     table_data_list = {}
     graph_list = {}

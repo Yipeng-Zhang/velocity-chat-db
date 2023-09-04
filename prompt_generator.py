@@ -2,97 +2,89 @@ import openai
 import time
 
 
-test = False # set True for displaying more detials
+test = True # set True for displaying more detials
 
 is_chatgpt = True
 
 model_version = "vicuna-13b-v1.5"
 
-class prompt_generator:
+class PromptGenerator:
     
     def __init__(self):
+        with open('/home/zha324/Data/openai_key', 'r') as file:
+            key = file.read()
         self.model_version = model_version
+
         openai.api_key = "EMPTY"
         if not is_chatgpt:
             openai.api_base = "http://localhost:8000/v1"
-        self.reset_messages()
+        self.reset_message()
 
         if is_chatgpt:
             # self.model_version = "gpt-3.5-turbo"    # gpt-3.5-turbo   gpt-4
             self.model_version = "gpt-4"    # gpt-3.5-turbo   gpt-4
-            openai.api_key = "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"
+            # print("key", key)
+            openai.api_key = key
         
-    def reset_messages(self):
-        self.messages = [{"role": "system", "content": "You are a professinal database scienist. You goal is to write SQLs to answer user's question."}]
-        self.messages_general = [{"role": "system", "content": "Given a user's conversation and a list of functions, your tasks is to determinal which tasks are related to user's demand."}]
-
-    def setDataSchema(self, dataSchema):
-        self.dataSchema = dataSchema
-
-    def setQuestion(self, question):
-        self.query = question
-
-    def call_gpt_api(self, prompt, message_input):
-        max_retries = 10  # Maximum number of retries
-        retry_delay = 1  # Delay between retries in seconds
-
+    def call_gpt_api(self, message_list):
+        max_retries = 3  # Maximum number of retries
         for _ in range(max_retries):
             try:
                 if is_chatgpt:
                     completion = openai.ChatCompletion.create(
                         model = self.model_version,
-                        messages = message_input, 
+                        messages = message_list, 
                         temperature = 0.
                     )
                 else:
                     completion = openai.ChatCompletion.create(
                         model = self.model_version,
-                        messages = message_input
+                        messages = message_list
                     )
-
-                print (prompt)
-                    
                 return completion.choices[0].message.content
             except Exception as e:
-                # print("Retrying...")
+                print(e)
                 if "reduce the length" in str(e):
-                    self.messages.pop(0)
-                    # print("messages length:", len(self.messages))
-                    continue
-                # time.sleep(retry_delay)
-
+                    self.remove_message(message_list)
+                
         # If all retries failed, raise an error or return a default value
         raise Exception("API call failed after multiple retries.")
     
-    def next_step_single_selection(self, question, options):
+    def continue_talk(self):
+        return self.call_gpt_api(self.message_list)
 
+    
+    def next_step_single_selection(self, question, options, background):
         prompt = f"""
         Here is the message from the user "{question}"
 
-        I need you to select one option from the following options' discriptions.
+        {background}
+
+        I need you to select one option that can best discrip user's message from the following options' discriptions.
         Each option is introduces in the from of "[index] option discription."
 
         {options}
 
         You can write how you think about this question and give your thought step-by-step.
-        Finaly, you can select one option, and provide your response to the user's question.
-        The option and responsed should be formed as a Json object.
+        Finaly, you can select one option, and you may be asked to response the user's question.
+        The option and the possible response should be formed as a Json object.
         For example:
         {{
             "option": 1,
             "response": "response for option 1."
         }}
         """
-        message_new = {"role": "user", "content": prompt}
-        if len(self.messages_general) == 1:
-            self.messages_general.append(message_new)
-        else:
-            self.messages_general[1] = message_new
-        response = self.call_gpt_api(prompt, self.messages_general)
+        message = {"role": "user", "content": prompt}
+        self.message_list.append(message)
+        response = self.call_gpt_api(self.message_list)
+        if test:
+            # self._display_information_debug(prompt,response)
+            # self._display_all_sesion(self.message_list, "message_list")
+            print(response)
+        self.message_list.pop() #prompt for selection is not important
         return response
     
-    def next_step_mulpitle_selection(self, question, options):
-
+    def next_step_mulpitle_selection(self, question, options, background):
         prompt = f"""
         Here is the message from the user "{question}"
 
@@ -101,8 +93,8 @@ class prompt_generator:
 
         {options}
 
-        You should select one option, and provide your response to the user's question.
-        The option and responsed should be formed as a Json object.
+        You should select at least one option, and provide your response to the user's question.
+        The options and possible respones should be formed as a Json object.
         Here is the example containing two options
         {{
             {{
@@ -116,17 +108,19 @@ class prompt_generator:
             
         }}
         """
-        message_new = {"role": "user", "content": prompt}
-        if len(self.messages_general) == 1:
-            self.messages_general.append(message_new)
-        else:
-            self.messages_general[1] = message_new
-        response = self.call_gpt_api(prompt, self.messages_general)
+        message = {"role": "user", "content": prompt}
+        self.message_list.append(message)
+        response = self.call_gpt_api(self.message_list)
+        if test:
+            # self._display_information_debug(prompt,response)
+            # self._display_all_sesion(self.message_list,"message_list")
+            print(response)
+        self.message_list.pop() #prompt for selection is not important
         return response
 
 
-    def task_initialize(self, table_schema, question):
-
+    def generate_sql(self, table_schema, question):
+        self.message_list_temp = []
         prompt = f"""
         Given a SQLite table whih the following columns:
 
@@ -151,22 +145,14 @@ class prompt_generator:
         For example, you can first analyze which columns in the given tables are related to the query, then think about how to join them.
         """
 
-        message_new = {"role": "user", "content": prompt}
-        self.messages.append(message_new)
-        response = self.call_gpt_api(prompt, self.messages)
+        message = {"role": "user", "content": prompt}
+        self.message_list_temp.append(message)
+        response = self.call_gpt_api(self.message_list_temp)
         message_response = {"role": "assistant", "content": response}
-        self.messages.append(message_response)
-
-        # print the chat completion
+        self.message_list_temp.append(message_response)
         if test:
-            print("=================================================")
-            for item in self.messages:
-                print("[role]:", item["role"])
-                print("[content]:", item["content"])
-                print("------------------------")
-            print("=================================================")
-            input()
-
+            # self._display_information_debug(prompt,response)
+            self._display_all_sesion(self.message_list_temp, "message_list_temp")
         return response
     
 
@@ -176,7 +162,7 @@ class prompt_generator:
         {sql_result}
 
         First, you should introduce the data.
-        For example, "The following data is related to the question:", then show the data row by row.
+        For example, "The following data is for answring the question:", then show the data in the markdownn form.
         Second, if any column is not from the table directly, but genereated by multiple columns, you shoulf introduct how we get the data? 
         For what purpose you select these columns?
         For example, "The columns are xxx, xxx, respectively. Column xxx is computed by xxx, etc."
@@ -187,55 +173,38 @@ class prompt_generator:
         For example, "There are some insight finds from the data. First, second, etc."
         """
 
-        message_new = {"role": "user", "content": prompt}
-        self.messages.append(message_new)
-        response = self.call_gpt_api(prompt, self.messages)
+        message = {"role": "user", "content": prompt}
+        self.message_list_temp.append(message)
+        response = self.call_gpt_api(self.message_list_temp)
         message_response = {"role": "assistant", "content": response}
-        self.messages.append(message_response)
-
-        # print the chat completion
+        self.message_list_temp.append(message_response)
         if test:
-            print("=================================================")
-            for item in self.messages:
-                print("[role]:", item["role"])
-                print("[content]:", item["content"])
-                print("------------------------")
-            print("=================================================")
-            input()
-
+            # self._display_information_debug(prompt,response)
+            self._display_all_sesion(self.message_list_temp, "message_list_temp")
         return response
     
+    def get_columns(self, sql):
+        prompt = f"""
+        {sql}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def correct_sql_response_formate(self, sql):
-        prompt =f"""
-        The SQLite Sql ({sql}) you provided before is not followed the rule.
-        The SQL has to start with [sta] and end with [end].
-        For example, [sta] select "set number" , count("set number") from data group by "set number"; [end]
-        Please providing the SQL only, and no other content
+        Provide me all columns' names of the above sql as a list.
+        For example, [column1, column2, column3].
+        Noting that, for a column
         """
 
-        return self.call_gpt_api(prompt)
+        message = {"role": "user", "content": prompt}
+        self.message_list_temp.append(message)
+        response = self.call_gpt_api(self.message_list_temp)
+        message_response = {"role": "assistant", "content": response}
+        self.message_list_temp.append(message_response)
+        if test:
+            # self._display_information_debug(prompt,response)
+            self._display_all_sesion(self.message_list_temp, "message_list_temp")
+        return response
 
     
-    def correct_sql(self, table_schema, sql, sql_result):
-        pormpt = f"""
+    def _correct_sql(self, table_schema, sql, sql_result):
+        prompt = f"""
         Here is a SQL for SQLite datablase: {sql}
 
         When run this SQL in SQLite, we get an error:
@@ -251,33 +220,42 @@ class prompt_generator:
         Fourth, please provide SQL output only. The SQL code should be enclosed within [sta] and [end] markers.
         """
 
-        return self.call_gpt_api(pormpt)
+        message = {"role": "user", "content": prompt}
+        self.message_list_temp.append(message)
+        response = self.call_gpt_api(self.message_list_temp)
+        message_response = {"role": "assistant", "content": response}
+        self.message_list_temp.append(message_response)
+        if test:
+            self._display_information_debug(prompt,response)
+        return response
     
+    def reset_message(self):
+        self.message_list = []
+        content = "You are a professinal database scienist. You goal is to write SQLs to answer user's question."
+        self.add_new_message("system", content)
+        # self.messages_general = [{"role": "system", "content": "Given a user's conversation and a list of functions, your tasks is to determinal which tasks are related to user's demand."}]
 
-    def get_figure(self, question, sql_result):
-        self.reset_messages()
-        pormpt = f"""
-        Now, for our question: {question}
+    def add_new_message(self, role, message):
+        self.message_list.append({"role" : role, "content" : message})
 
-        We have the following data {sql_result}
+    def remove_message(self, message_list):
+        message_list.pop(0)
 
-        As I'm using Python, and havd"import matplotlib.pyplot as plt", can you provide Python code to draw a figure to present the data?
-        If you do not think this data should be visulized, simply response "print("No figure")".
-        Otherwise, you can present the Python code to present this data based on our question.
-        Noting that, your response should include the Python code only, but no any other information.
-        """
-
-        return self.call_gpt_api(pormpt)
+    def get_message_list(self):
+        return self.message_list
     
-    def extract_figure_code(self, code):
-        self.reset_messages()
-        pormpt = f"""
-        Here is the python code you provided me before.
+    def _display_information_debug(self, prompt, response):
+        print("=================================================")
+        print(prompt)
+        print("------------------------------------------------")
+        print(response)
+        print("=================================================")
 
-        {code}
-
-        Can you extract the code only for me?
-        Do not say another thind in the feed back, but the code only.
-        """
-
-        return self.call_gpt_api(pormpt)
+    def _display_all_sesion(self, message_list, message_list_name):
+        print("=================================================")
+        print("=============", message_list_name, "==============")
+        for item in message_list:
+            print("[role]:", item["role"])
+            print("[content]:", item["content"])
+            print("------------------------------------------------")
+        print("=================================================")

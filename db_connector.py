@@ -2,20 +2,23 @@
 import sqlite3
 
 
-class db_connector:
-    def __init__(self, db_name):
-            
-        # Making a connection between sqlite3
-        file_path = '/home/zha324/Data/{}.sqlite'.format(db_name)
-        # print("Path file:", file_path)
-        self.sqliteConnection = sqlite3.connect(file_path)
-        self.sqliteConnection.text_factory = self.my_text_factory
+class DbConnector:
+    def __init__(self, db_name_list):
+
+        self.sqliteConnection = {}
+
+        for db_name in db_name_list:
+            # Making a connection between sqlite3
+            file_path = '/home/zha324/Data/{}.sqlite'.format(db_name)
+            # print("Path file:", file_path)
+            self.sqliteConnection[db_name] = sqlite3.connect(file_path)
+            self.sqliteConnection[db_name].text_factory = self.my_text_factory
 
 
-    def exe_sql(self, sql):
+    def exe_sql(self, db_name, sql):
         try:
             # Creating cursor object using connection object
-            cursor = self.sqliteConnection.cursor()
+            cursor = self.sqliteConnection[db_name].cursor()
             
             # executing our sql query
             cursor.execute(sql)
@@ -34,8 +37,8 @@ class db_connector:
         except UnicodeDecodeError:
             return value.decode('latin-1')
 
-    def get_table_schema(self, table_name):
+    def get_table_schema(self, db_name, table_name):
         sql = "SELECT sql FROM sqlite_master WHERE type='table' and name='{}'".format(table_name)
-        db_schema = self.exe_sql(sql)
+        db_schema = self.exe_sql(db_name, sql)
         return db_schema[0]
 
